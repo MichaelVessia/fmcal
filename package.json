@@ -1,0 +1,24 @@
+{
+  "name": "fmcal",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/main.ts",
+    "build": "bun build src/main.ts --compile --outfile fmcal",
+    "typecheck": "tsc --noEmit",
+    "prepare": "effect-language-service patch"
+  },
+  "dependencies": {
+    "effect": "^3.12",
+    "@effect/cli": "^0.54",
+    "@effect/platform": "^0.72",
+    "@effect/platform-bun": "^0.52",
+    "tsdav": "^2.1",
+    "ical.js": "^2.1"
+  },
+  "devDependencies": {
+    "@effect/language-service": "^0.62",
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  }
+}
