@@ -1,14 +1,14 @@
-import * as Schema from "effect/Schema"
+import * as Schema from "effect/Schema";
 
 // ============================================================================
 // Branded IDs
 // ============================================================================
 
-export const CalendarId = Schema.String.pipe(Schema.brand("CalendarId"))
-export type CalendarId = typeof CalendarId.Type
+export const CalendarId = Schema.String.pipe(Schema.brand("CalendarId"));
+export type CalendarId = typeof CalendarId.Type;
 
-export const EventId = Schema.String.pipe(Schema.brand("EventId"))
-export type EventId = typeof EventId.Type
+export const EventId = Schema.String.pipe(Schema.brand("EventId"));
+export type EventId = typeof EventId.Type;
 
 // ============================================================================
 // Domain Models
@@ -21,6 +21,8 @@ export class Calendar extends Schema.Class<Calendar>("Calendar")({
   color: Schema.OptionFromNullOr(Schema.String),
   timezone: Schema.OptionFromNullOr(Schema.String),
   url: Schema.String,
+  /** True if calendar is read-only (subscribed, shared without write access, etc.) */
+  readOnly: Schema.Boolean,
 }) {}
 
 export class CalendarEvent extends Schema.Class<CalendarEvent>("CalendarEvent")({

@@ -9,6 +9,7 @@ import {
   ICalGenerateError,
   ICalParseError,
   NetworkError,
+  ReadOnlyCalendarError,
   TypeId,
 } from "./errors.ts";
 
@@ -123,6 +124,56 @@ describe("Error Types", () => {
       });
 
       expect(error).toBeInstanceOf(Error);
+    });
+  });
+
+  describe("ReadOnlyCalendarError", () => {
+    it("creates error with calendarId and operation", () => {
+      const error = new ReadOnlyCalendarError({
+        calendarId: "holidays",
+        operation: "create",
+      });
+
+      expect(error._tag).toBe("ReadOnlyCalendarError");
+      expect(error.calendarId).toBe("holidays");
+      expect(error.operation).toBe("create");
+    });
+
+    it("generates message from calendarId and operation", () => {
+      const error = new ReadOnlyCalendarError({
+        calendarId: "subscribed-cal",
+        operation: "delete",
+      });
+
+      expect(error.message).toBe('Cannot delete event: calendar "subscribed-cal" is read-only');
+    });
+
+    it("supports all operation types", () => {
+      const operations = ["create", "update", "delete"] as const;
+
+      for (const operation of operations) {
+        const error = new ReadOnlyCalendarError({ calendarId: "test", operation });
+        expect(error.operation).toBe(operation);
+      }
+    });
+
+    it("is an instance of Error", () => {
+      const error = new ReadOnlyCalendarError({
+        calendarId: "test",
+        operation: "update",
+      });
+
+      expect(error).toBeInstanceOf(Error);
+    });
+
+    it("static is() method identifies error correctly", () => {
+      const error = new ReadOnlyCalendarError({
+        calendarId: "test",
+        operation: "create",
+      });
+
+      expect(ReadOnlyCalendarError.is(error)).toBe(true);
+      expect(ReadOnlyCalendarError.is(new Error("other"))).toBe(false);
     });
   });
 

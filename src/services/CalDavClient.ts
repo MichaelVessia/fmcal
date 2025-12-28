@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import ICAL from "ical.js";
-import { DAVClient } from "tsdav";
+import { DAVClient, propfind } from "tsdav";
 
 import { FastmailConfig } from "../config.ts";
 import type {
@@ -25,6 +25,7 @@ import {
   EventNotFoundError,
   ICalGenerateError,
   ICalParseError,
+  ReadOnlyCalendarError,
 } from "../errors.ts";
 
 // ============================================================================
@@ -58,7 +59,11 @@ export interface CalDavClientService {
     input: CreateEventInput;
   }) => Effect.Effect<
     CalendarEvent,
-    CalDavAuthError | CalDavError | CalendarNotFoundError | ICalGenerateError
+    | CalDavAuthError
+    | CalDavError
+    | CalendarNotFoundError
+    | ReadOnlyCalendarError
+    | ICalGenerateError
   >;
 
   readonly updateEvent: (params: {
@@ -70,6 +75,7 @@ export interface CalDavClientService {
     | CalDavAuthError
     | CalDavError
     | CalendarNotFoundError
+    | ReadOnlyCalendarError
     | EventNotFoundError
     | ICalParseError
     | ICalGenerateError
@@ -80,7 +86,12 @@ export interface CalDavClientService {
     eventId: EventId;
   }) => Effect.Effect<
     void,
-    CalDavAuthError | CalDavError | CalendarNotFoundError | EventNotFoundError | ICalParseError
+    | CalDavAuthError
+    | CalDavError
+    | CalendarNotFoundError
+    | ReadOnlyCalendarError
+    | EventNotFoundError
+    | ICalParseError
   >;
 
   readonly freeBusy: (params: {
@@ -208,6 +219,59 @@ export const generateUid: Effect.Effect<string> = Effect.sync(() => `${crypto.ra
 type DavCalendar = Awaited<ReturnType<DAVClient["fetchCalendars"]>>[number];
 type DavCalendarObject = Awaited<ReturnType<DAVClient["fetchCalendarObjects"]>>[number];
 
+/** Extended calendar info with read-only status */
+type DavCalendarWithPrivileges = DavCalendar & { readOnly: boolean };
+
+/**
+ * Check if calendar has write privileges by examining current-user-privilege-set.
+ * A calendar is read-only if it lacks write, writeContent, bind, or unbind privileges.
+ */
+const checkCalendarPrivileges = (
+  cal: DavCalendar,
+  authHeader: string,
+): Effect.Effect<boolean, CalDavError> =>
+  Effect.gen(function* () {
+    const response = yield* Effect.tryPromise({
+      try: () =>
+        propfind({
+          url: cal.url,
+          props: { "d:current-user-privilege-set": {} },
+          depth: "0",
+          headers: { authorization: authHeader },
+        }),
+      catch: (error) =>
+        new CalDavError({
+          reason: "FetchCalendarsFailed",
+          message: "Failed to fetch calendar privileges",
+          cause: error,
+        }),
+    });
+
+    const props = response[0]?.props as
+      | { currentUserPrivilegeSet?: { privilege?: Array<Record<string, unknown>> } }
+      | undefined;
+    const privileges = props?.currentUserPrivilegeSet?.privilege;
+
+    if (!privileges || !Array.isArray(privileges)) {
+      // If we can't determine privileges, assume writable
+      return false;
+    }
+
+    // Check for write privileges - need at least one of these to modify events
+    const writePrivileges = ["write", "writeContent", "bind", "unbind"];
+    const hasWriteAccess = privileges.some((p) => writePrivileges.some((wp) => wp in p));
+
+    return !hasWriteAccess;
+  });
+
+/** Guard that fails if calendar is read-only */
+const guardWritable = (
+  cal: DavCalendarWithPrivileges,
+  calendarId: CalendarId,
+  operation: "create" | "update" | "delete",
+): Effect.Effect<void, ReadOnlyCalendarError> =>
+  cal.readOnly ? Effect.fail(new ReadOnlyCalendarError({ calendarId, operation })) : Effect.void;
+
 /** Parse calendar objects into events, collecting parse errors */
 const parseCalendarObjects = (
   objects: ReadonlyArray<DavCalendarObject>,
@@ -270,8 +334,11 @@ const make = Effect.gen(function* () {
       }),
   });
 
-  // Cache calendars using Ref for Effect-managed state
-  const calendarsCache = yield* Ref.make<ReadonlyArray<DavCalendar>>([]);
+  // Auth header for privilege checks
+  const authHeader = `Basic ${Buffer.from(`${config.username}:${Redacted.value(config.password)}`).toString("base64")}`;
+
+  // Cache calendars with privilege info using Ref for Effect-managed state
+  const calendarsCache = yield* Ref.make<ReadonlyArray<DavCalendarWithPrivileges>>([]);
 
   const refreshCalendarsCache = Effect.gen(function* () {
     const cals = yield* Effect.tryPromise({
@@ -283,8 +350,20 @@ const make = Effect.gen(function* () {
           cause: error,
         }),
     });
-    yield* Ref.set(calendarsCache, cals);
-    return cals;
+
+    // Check privileges for each calendar
+    const calsWithPrivileges = yield* Effect.forEach(
+      cals,
+      (cal) =>
+        Effect.gen(function* () {
+          const readOnly = yield* checkCalendarPrivileges(cal, authHeader);
+          return { ...cal, readOnly } as DavCalendarWithPrivileges;
+        }),
+      { concurrency: "unbounded" },
+    );
+
+    yield* Ref.set(calendarsCache, calsWithPrivileges);
+    return calsWithPrivileges;
   });
 
   const findCalendar = (calendarId: CalendarId) =>
@@ -328,6 +407,7 @@ const make = Effect.gen(function* () {
         color: Option.fromNullable(cal.calendarColor),
         timezone: Option.fromNullable(cal.timezone),
         url: cal.url,
+        readOnly: cal.readOnly,
       })) as ReadonlyArray<Calendar>;
     }),
 
@@ -357,6 +437,7 @@ const make = Effect.gen(function* () {
     createEvent: ({ calendarId, input }) =>
       Effect.gen(function* () {
         const calendar = yield* findCalendar(calendarId);
+        yield* guardWritable(calendar, calendarId, "create");
         const uid = yield* generateUid;
         const icalString = yield* generateICalEvent(input, uid);
 
@@ -393,6 +474,7 @@ const make = Effect.gen(function* () {
     updateEvent: ({ calendarId, eventId, input }) =>
       Effect.gen(function* () {
         const calendar = yield* findCalendar(calendarId);
+        yield* guardWritable(calendar, calendarId, "update");
         const objects = yield* fetchCalendarObjects(calendar);
         const found = yield* findEventInObjects(objects, calendarId, eventId);
 
@@ -453,6 +535,7 @@ const make = Effect.gen(function* () {
     deleteEvent: ({ calendarId, eventId }) =>
       Effect.gen(function* () {
         const calendar = yield* findCalendar(calendarId);
+        yield* guardWritable(calendar, calendarId, "delete");
         const objects = yield* fetchCalendarObjects(calendar);
         const found = yield* findEventInObjects(objects, calendarId, eventId);
 

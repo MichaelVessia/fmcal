@@ -76,6 +76,32 @@ export class EventNotFoundError extends Schema.TaggedError<EventNotFoundError>()
   }
 }
 
+/**
+ * Error when attempting to modify a read-only/virtual calendar.
+ * These calendars (e.g., subscribed calendars, shared calendars without write access)
+ * cannot have events created, updated, or deleted.
+ *
+ * Agents should NOT retry operations that fail with this error - the calendar
+ * is permanently read-only for the current user.
+ */
+export class ReadOnlyCalendarError extends Schema.TaggedError<ReadOnlyCalendarError>()(
+  "ReadOnlyCalendarError",
+  {
+    calendarId: Schema.String,
+    operation: Schema.Literal("create", "update", "delete"),
+  },
+) {
+  readonly [TypeId] = TypeId;
+
+  override get message(): string {
+    return `Cannot ${this.operation} event: calendar "${this.calendarId}" is read-only`;
+  }
+
+  static is(u: unknown): u is ReadOnlyCalendarError {
+    return hasProperty(u, TypeId) && isTagged(u, "ReadOnlyCalendarError");
+  }
+}
+
 // ============================================================================
 // Network/Connection Errors
 // ============================================================================
@@ -195,6 +221,7 @@ export type CalDavClientError =
   | CalDavAuthError
   | CalendarNotFoundError
   | EventNotFoundError
+  | ReadOnlyCalendarError
   | NetworkError
   | CalDavError
   | ICalParseError

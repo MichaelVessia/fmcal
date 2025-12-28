@@ -9,6 +9,7 @@ import {
   CalDavError,
   CalendarNotFoundError,
   EventNotFoundError,
+  ReadOnlyCalendarError,
 } from "../errors.ts";
 
 import {
@@ -31,6 +32,7 @@ const mockCalendars = [
     color: Option.some("#0000ff"),
     timezone: Option.some("America/New_York"),
     url: "https://caldav.example.com/work",
+    readOnly: false,
   },
   {
     id: "personal" as CalendarId,
@@ -39,6 +41,16 @@ const mockCalendars = [
     color: Option.none(),
     timezone: Option.none(),
     url: "https://caldav.example.com/personal",
+    readOnly: false,
+  },
+  {
+    id: "subscribed" as CalendarId,
+    displayName: "Subscribed",
+    description: Option.some("Read-only subscribed calendar"),
+    color: Option.none(),
+    timezone: Option.none(),
+    url: "https://caldav.example.com/subscribed",
+    readOnly: true,
   },
 ];
 
@@ -116,6 +128,9 @@ function createMockService(options?: {
       if (!calendar) {
         return Effect.fail(new CalendarNotFoundError({ calendarId }));
       }
+      if (calendar.readOnly) {
+        return Effect.fail(new ReadOnlyCalendarError({ calendarId, operation: "create" }));
+      }
       return Effect.succeed({
         id: "new-event" as EventId,
         calendarId,
@@ -139,6 +154,9 @@ function createMockService(options?: {
       if (!calendar) {
         return Effect.fail(new CalendarNotFoundError({ calendarId }));
       }
+      if (calendar.readOnly) {
+        return Effect.fail(new ReadOnlyCalendarError({ calendarId, operation: "update" }));
+      }
       const event = mockEvents.find((e) => e.calendarId === calendarId && e.id === eventId);
       if (!event) {
         return Effect.fail(new EventNotFoundError({ calendarId, eventId }));
@@ -161,6 +179,9 @@ function createMockService(options?: {
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
         return Effect.fail(new CalendarNotFoundError({ calendarId }));
+      }
+      if (calendar.readOnly) {
+        return Effect.fail(new ReadOnlyCalendarError({ calendarId, operation: "delete" }));
       }
       const event = mockEvents.find((e) => e.calendarId === calendarId && e.id === eventId);
       if (!event) {
@@ -207,10 +228,13 @@ describe("CalDavClient Service", () => {
         const client = yield* CalDavClient;
         const calendars = yield* client.fetchCalendars;
 
-        expect(calendars).toHaveLength(2);
+        expect(calendars).toHaveLength(3);
         expect(calendars[0].id as string).toBe("work");
         expect(calendars[0].displayName).toBe("Work");
+        expect(calendars[0].readOnly).toBe(false);
         expect(calendars[1].id as string).toBe("personal");
+        expect(calendars[2].id as string).toBe("subscribed");
+        expect(calendars[2].readOnly).toBe(true);
       }).pipe(Effect.provide(MockCalDavClientLayer)),
     );
 
@@ -354,6 +378,33 @@ describe("CalDavClient Service", () => {
         expect(exit._tag).toBe("Failure");
       }).pipe(Effect.provide(MockCalDavClientLayer)),
     );
+
+    it.effect("fails with ReadOnlyCalendarError for read-only calendar", () =>
+      Effect.gen(function* () {
+        const client = yield* CalDavClient;
+        const input = new CreateEventInput({
+          summary: "Test",
+          start: new Date(),
+          end: new Date(),
+          description: Option.none(),
+          location: Option.none(),
+          recurrenceRule: Option.none(),
+        });
+
+        const exit = yield* Effect.exit(
+          client.createEvent({
+            calendarId: "subscribed" as CalendarId,
+            input,
+          }),
+        );
+
+        expect(exit._tag).toBe("Failure");
+        if (exit._tag === "Failure") {
+          const error = exit.cause;
+          expect(error._tag).toBe("Fail");
+        }
+      }).pipe(Effect.provide(MockCalDavClientLayer)),
+    );
   });
 
   describe("updateEvent", () => {
@@ -405,6 +456,31 @@ describe("CalDavClient Service", () => {
         expect(exit._tag).toBe("Failure");
       }).pipe(Effect.provide(MockCalDavClientLayer)),
     );
+
+    it.effect("fails with ReadOnlyCalendarError for read-only calendar", () =>
+      Effect.gen(function* () {
+        const client = yield* CalDavClient;
+        const input = new UpdateEventInput({
+          summary: Option.some("Test"),
+          start: Option.none(),
+          end: Option.none(),
+          description: Option.none(),
+          location: Option.none(),
+          allDay: Option.none(),
+          recurrenceRule: Option.none(),
+        });
+
+        const exit = yield* Effect.exit(
+          client.updateEvent({
+            calendarId: "subscribed" as CalendarId,
+            eventId: "event-1" as EventId,
+            input,
+          }),
+        );
+
+        expect(exit._tag).toBe("Failure");
+      }).pipe(Effect.provide(MockCalDavClientLayer)),
+    );
   });
 
   describe("deleteEvent", () => {
@@ -440,6 +516,20 @@ describe("CalDavClient Service", () => {
         const exit = yield* Effect.exit(
           client.deleteEvent({
             calendarId: "unknown" as CalendarId,
+            eventId: "event-1" as EventId,
+          }),
+        );
+
+        expect(exit._tag).toBe("Failure");
+      }).pipe(Effect.provide(MockCalDavClientLayer)),
+    );
+
+    it.effect("fails with ReadOnlyCalendarError for read-only calendar", () =>
+      Effect.gen(function* () {
+        const client = yield* CalDavClient;
+        const exit = yield* Effect.exit(
+          client.deleteEvent({
+            calendarId: "subscribed" as CalendarId,
             eventId: "event-1" as EventId,
           }),
         );
