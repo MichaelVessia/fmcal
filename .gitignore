@@ -14,6 +14,7 @@ fmcal
 
 # Nix
 .direnv/
+result
 
 # IDE
 .idea/
