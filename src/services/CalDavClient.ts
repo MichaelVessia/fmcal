@@ -1,12 +1,14 @@
-import * as Context from "effect/Context"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
-import * as Redacted from "effect/Redacted"
-import ICAL from "ical.js"
-import { DAVClient } from "tsdav"
+import * as Array from "effect/Array";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
+import ICAL from "ical.js";
+import { DAVClient } from "tsdav";
 
-import { FastmailConfig } from "../config.ts"
+import { FastmailConfig } from "../config.ts";
 import type {
   Calendar,
   CalendarEvent,
@@ -15,76 +17,70 @@ import type {
   EventId,
   FreeBusyResult,
   UpdateEventInput,
-} from "../domain.ts"
+} from "../domain.ts";
 import {
   CalDavAuthError,
   CalDavError,
   CalendarNotFoundError,
   EventNotFoundError,
-} from "../errors.ts"
+} from "../errors.ts";
 
 // ============================================================================
 // Service Interface
 // ============================================================================
 
 export interface CalDavClientService {
-  readonly fetchCalendars: Effect.Effect<
-    ReadonlyArray<Calendar>,
-    CalDavAuthError | CalDavError
-  >
+  readonly fetchCalendars: Effect.Effect<ReadonlyArray<Calendar>, CalDavAuthError | CalDavError>;
 
   readonly fetchEvents: (params: {
-    calendarId: CalendarId
-    from?: Date
-    to?: Date
-    max?: number
-    query?: string
+    calendarId: CalendarId;
+    from?: Date;
+    to?: Date;
+    max?: number;
+    query?: string;
   }) => Effect.Effect<
     ReadonlyArray<CalendarEvent>,
     CalDavAuthError | CalDavError | CalendarNotFoundError
-  >
+  >;
 
   readonly fetchEvent: (params: {
-    calendarId: CalendarId
-    eventId: EventId
+    calendarId: CalendarId;
+    eventId: EventId;
   }) => Effect.Effect<
     CalendarEvent,
     CalDavAuthError | CalDavError | CalendarNotFoundError | EventNotFoundError
-  >
+  >;
 
   readonly createEvent: (params: {
-    calendarId: CalendarId
-    input: CreateEventInput
-  }) => Effect.Effect<
-    CalendarEvent,
-    CalDavAuthError | CalDavError | CalendarNotFoundError
-  >
+    calendarId: CalendarId;
+    input: CreateEventInput;
+  }) => Effect.Effect<CalendarEvent, CalDavAuthError | CalDavError | CalendarNotFoundError>;
 
   readonly updateEvent: (params: {
-    calendarId: CalendarId
-    eventId: EventId
-    input: UpdateEventInput
+    calendarId: CalendarId;
+    eventId: EventId;
+    input: UpdateEventInput;
   }) => Effect.Effect<
     CalendarEvent,
     CalDavAuthError | CalDavError | CalendarNotFoundError | EventNotFoundError
-  >
+  >;
 
   readonly deleteEvent: (params: {
-    calendarId: CalendarId
-    eventId: EventId
+    calendarId: CalendarId;
+    eventId: EventId;
   }) => Effect.Effect<
     void,
     CalDavAuthError | CalDavError | CalendarNotFoundError | EventNotFoundError
-  >
+  >;
 
   readonly freeBusy: (params: {
-    calendarIds: ReadonlyArray<CalendarId>
-    from: Date
-    to: Date
+    calendarIds: ReadonlyArray<CalendarId>;
+    from: Date;
+    to: Date;
   }) => Effect.Effect<
     ReadonlyArray<FreeBusyResult>,
     CalDavAuthError | CalDavError | CalendarNotFoundError
-  >
+  >;
 }
 
 // ============================================================================
@@ -105,19 +101,19 @@ export function parseICalEvent(
   icalString: string,
   calendarId: CalendarId,
   eventUrl: string,
-  etag: string | undefined
-): CalendarEvent | null {
+  etag: string | undefined,
+): Option.Option<CalendarEvent> {
   try {
-    const jcal = ICAL.parse(icalString)
-    const vcalendar = new ICAL.Component(jcal)
-    const vevent = vcalendar.getFirstSubcomponent("vevent")
+    const jcal = ICAL.parse(icalString);
+    const vcalendar = new ICAL.Component(jcal);
+    const vevent = vcalendar.getFirstSubcomponent("vevent");
 
-    if (!vevent) return null
+    if (!vevent) return Option.none();
 
-    const event = new ICAL.Event(vevent)
-    const uid = event.uid
+    const event = new ICAL.Event(vevent);
+    const uid = event.uid;
 
-    return {
+    return Option.some({
       id: uid as EventId,
       calendarId,
       summary: event.summary || "",
@@ -126,67 +122,100 @@ export function parseICalEvent(
       start: event.startDate.toJSDate(),
       end: event.endDate.toJSDate(),
       allDay: event.startDate.isDate,
-      recurrenceRule: Option.fromNullable(
-        vevent.getFirstPropertyValue("rrule")?.toString()
-      ),
+      recurrenceRule: Option.fromNullable(vevent.getFirstPropertyValue("rrule")?.toString()),
       url: eventUrl,
       etag: Option.fromNullable(etag),
-    } as CalendarEvent
+    } as CalendarEvent);
   } catch {
-    return null
+    return Option.none();
   }
 }
 
 /** @internal */
 export function generateICalEvent(input: CreateEventInput, uid: string): string {
-  const vcalendar = new ICAL.Component(["vcalendar", [], []])
-  vcalendar.updatePropertyWithValue("prodid", "-//fmcal//EN")
-  vcalendar.updatePropertyWithValue("version", "2.0")
+  const vcalendar = new ICAL.Component(["vcalendar", [], []]);
+  vcalendar.updatePropertyWithValue("prodid", "-//fmcal//EN");
+  vcalendar.updatePropertyWithValue("version", "2.0");
 
-  const vevent = new ICAL.Component("vevent")
-  vevent.updatePropertyWithValue("uid", uid)
-  vevent.updatePropertyWithValue("dtstamp", ICAL.Time.now())
-  vevent.updatePropertyWithValue("summary", input.summary)
+  const vevent = new ICAL.Component("vevent");
+  vevent.updatePropertyWithValue("uid", uid);
+  vevent.updatePropertyWithValue("dtstamp", ICAL.Time.now());
+  vevent.updatePropertyWithValue("summary", input.summary);
 
-  const startTime = ICAL.Time.fromJSDate(input.start, false)
-  const endTime = ICAL.Time.fromJSDate(input.end, false)
+  const startTime = ICAL.Time.fromJSDate(input.start, false);
+  const endTime = ICAL.Time.fromJSDate(input.end, false);
 
   if (input.allDay) {
-    startTime.isDate = true
-    endTime.isDate = true
+    startTime.isDate = true;
+    endTime.isDate = true;
   }
 
-  vevent.updatePropertyWithValue("dtstart", startTime)
-  vevent.updatePropertyWithValue("dtend", endTime)
+  vevent.updatePropertyWithValue("dtstart", startTime);
+  vevent.updatePropertyWithValue("dtend", endTime);
 
   if (Option.isSome(input.description)) {
-    vevent.updatePropertyWithValue("description", input.description.value)
+    vevent.updatePropertyWithValue("description", input.description.value);
   }
 
   if (Option.isSome(input.location)) {
-    vevent.updatePropertyWithValue("location", input.location.value)
+    vevent.updatePropertyWithValue("location", input.location.value);
   }
 
   if (Option.isSome(input.recurrenceRule)) {
-    const rrule = ICAL.Recur.fromString(input.recurrenceRule.value)
-    vevent.updatePropertyWithValue("rrule", rrule)
+    const rrule = ICAL.Recur.fromString(input.recurrenceRule.value);
+    vevent.updatePropertyWithValue("rrule", rrule);
   }
 
-  vcalendar.addSubcomponent(vevent)
-  return vcalendar.toString()
+  vcalendar.addSubcomponent(vevent);
+  return vcalendar.toString();
 }
 
 /** @internal */
-export function generateUid(): string {
-  return `${crypto.randomUUID()}@fmcal`
-}
+export const generateUid: Effect.Effect<string> = Effect.sync(() => `${crypto.randomUUID()}@fmcal`);
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+type DavCalendar = Awaited<ReturnType<DAVClient["fetchCalendars"]>>[number];
+type DavCalendarObject = Awaited<ReturnType<DAVClient["fetchCalendarObjects"]>>[number];
+
+/** Parse calendar objects into events, filtering out invalid ones */
+const parseCalendarObjects = (
+  objects: ReadonlyArray<DavCalendarObject>,
+  calendarId: CalendarId,
+): ReadonlyArray<CalendarEvent> =>
+  Array.filterMap(objects, (obj) =>
+    obj.data ? parseICalEvent(obj.data, calendarId, obj.url, obj.etag) : Option.none(),
+  );
+
+/** Find an event by ID from calendar objects, returning the object and parsed event */
+const findEventInObjects = (
+  objects: ReadonlyArray<DavCalendarObject>,
+  calendarId: CalendarId,
+  eventId: EventId,
+): Option.Option<{ obj: DavCalendarObject; event: CalendarEvent }> =>
+  Array.findFirst(objects, (obj) => {
+    if (!obj.data) return false;
+    const event = parseICalEvent(obj.data, calendarId, obj.url, obj.etag);
+    return Option.isSome(event) && event.value.id === eventId;
+  }).pipe(
+    Option.flatMap((obj) =>
+      obj.data
+        ? Option.map(parseICalEvent(obj.data, calendarId, obj.url, obj.etag), (event) => ({
+            obj,
+            event,
+          }))
+        : Option.none(),
+    ),
+  );
 
 // ============================================================================
 // Live Implementation
 // ============================================================================
 
 const make = Effect.gen(function* () {
-  const config = yield* FastmailConfig
+  const config = yield* FastmailConfig;
 
   // Create and login to DAV client
   const client = new DAVClient({
@@ -197,7 +226,7 @@ const make = Effect.gen(function* () {
     },
     authMethod: "Basic",
     defaultAccountType: "caldav",
-  })
+  });
 
   yield* Effect.tryPromise({
     try: () => client.login(),
@@ -206,130 +235,95 @@ const make = Effect.gen(function* () {
         message: "Failed to authenticate with CalDAV server",
         cause: error,
       }),
-  })
+  });
 
-  // Cache calendars for lookup
-  let calendarsCache: Awaited<ReturnType<typeof client.fetchCalendars>> = []
+  // Cache calendars using Ref for Effect-managed state
+  const calendarsCache = yield* Ref.make<ReadonlyArray<DavCalendar>>([]);
 
-  const refreshCalendarsCache = Effect.tryPromise({
-    try: () => client.fetchCalendars(),
-    catch: (error) =>
-      new CalDavError({
-        message: "Failed to fetch calendars",
-        cause: error,
-      }),
-  }).pipe(Effect.tap((cals) => Effect.sync(() => (calendarsCache = cals))))
+  const refreshCalendarsCache = Effect.gen(function* () {
+    const cals = yield* Effect.tryPromise({
+      try: () => client.fetchCalendars(),
+      catch: (error) =>
+        new CalDavError({
+          message: "Failed to fetch calendars",
+          cause: error,
+        }),
+    });
+    yield* Ref.set(calendarsCache, cals);
+    return cals;
+  });
 
   const findCalendar = (calendarId: CalendarId) =>
     Effect.gen(function* () {
-      if (calendarsCache.length === 0) {
-        yield* refreshCalendarsCache
-      }
-      const calendar = calendarsCache.find((c) => c.displayName === calendarId)
-      if (!calendar) {
-        return yield* Effect.fail(new CalendarNotFoundError({ calendarId }))
-      }
-      return calendar
-    })
+      const cached = yield* Ref.get(calendarsCache);
+      const calendars = Array.isEmptyReadonlyArray(cached) ? yield* refreshCalendarsCache : cached;
+      const calendar = Array.findFirst(calendars, (c) => c.displayName === calendarId);
+      return yield* Option.match(calendar, {
+        onNone: () => Effect.fail(new CalendarNotFoundError({ calendarId })),
+        onSome: Effect.succeed,
+      });
+    });
+
+  const fetchCalendarObjects = (
+    calendar: DavCalendar,
+    timeRange?: { start: string; end: string },
+  ) =>
+    Effect.tryPromise({
+      try: () =>
+        client.fetchCalendarObjects({
+          calendar,
+          ...(timeRange ? { timeRange } : {}),
+        }),
+      catch: (error) =>
+        new CalDavError({
+          message: "Failed to fetch calendar objects",
+          cause: error,
+        }),
+    });
 
   // Service implementation
   const service: CalDavClientService = {
     fetchCalendars: Effect.gen(function* () {
-      const davCalendars = yield* refreshCalendarsCache
+      const davCalendars = yield* refreshCalendarsCache;
 
-      return davCalendars.map(
-        (cal) =>
-          ({
-            id: cal.displayName as CalendarId,
-            displayName: cal.displayName || "",
-            description: Option.fromNullable(cal.description),
-            color: Option.fromNullable(cal.calendarColor),
-            timezone: Option.fromNullable(cal.timezone),
-            url: cal.url,
-          }) as Calendar
-      )
+      return Array.map(davCalendars, (cal) => ({
+        id: cal.displayName as CalendarId,
+        displayName: cal.displayName || "",
+        description: Option.fromNullable(cal.description),
+        color: Option.fromNullable(cal.calendarColor),
+        timezone: Option.fromNullable(cal.timezone),
+        url: cal.url,
+      })) as ReadonlyArray<Calendar>;
     }),
 
     fetchEvents: ({ calendarId, from, to }) =>
       Effect.gen(function* () {
-        const calendar = yield* findCalendar(calendarId)
+        const calendar = yield* findCalendar(calendarId);
 
         const timeRange =
-          from && to
-            ? {
-                start: from.toISOString(),
-                end: to.toISOString(),
-              }
-            : undefined
+          from && to ? { start: from.toISOString(), end: to.toISOString() } : undefined;
 
-        const objects = yield* Effect.tryPromise({
-          try: () =>
-            client.fetchCalendarObjects({
-              calendar,
-              ...(timeRange ? { timeRange } : {}),
-            }),
-          catch: (error) =>
-            new CalDavError({
-              message: "Failed to fetch calendar objects",
-              cause: error,
-            }),
-        })
-
-        const events: CalendarEvent[] = []
-        for (const obj of objects) {
-          if (obj.data) {
-            const event = parseICalEvent(
-              obj.data,
-              calendarId,
-              obj.url,
-              obj.etag
-            )
-            if (event) {
-              events.push(event)
-            }
-          }
-        }
-        return events
+        const objects = yield* fetchCalendarObjects(calendar, timeRange);
+        return parseCalendarObjects(objects, calendarId);
       }),
 
     fetchEvent: ({ calendarId, eventId }) =>
       Effect.gen(function* () {
-        const calendar = yield* findCalendar(calendarId)
+        const calendar = yield* findCalendar(calendarId);
+        const objects = yield* fetchCalendarObjects(calendar);
+        const found = findEventInObjects(objects, calendarId, eventId);
 
-        const objects = yield* Effect.tryPromise({
-          try: () =>
-            client.fetchCalendarObjects({
-              calendar,
-            }),
-          catch: (error) =>
-            new CalDavError({
-              message: "Failed to fetch calendar objects",
-              cause: error,
-            }),
-        })
-
-        for (const obj of objects) {
-          if (obj.data) {
-            const event = parseICalEvent(
-              obj.data,
-              calendarId,
-              obj.url,
-              obj.etag
-            )
-            if (event && event.id === eventId) {
-              return event
-            }
-          }
-        }
-
-        return yield* Effect.fail(new EventNotFoundError({ calendarId, eventId }))
+        return yield* Option.match(found, {
+          onNone: () => Effect.fail(new EventNotFoundError({ calendarId, eventId })),
+          onSome: ({ event }) => Effect.succeed(event),
+        });
       }),
 
     createEvent: ({ calendarId, input }) =>
       Effect.gen(function* () {
-        const calendar = yield* findCalendar(calendarId)
-        const uid = generateUid()
-        const icalString = generateICalEvent(input, uid)
+        const calendar = yield* findCalendar(calendarId);
+        const uid = yield* generateUid;
+        const icalString = generateICalEvent(input, uid);
 
         yield* Effect.tryPromise({
           try: () =>
@@ -343,9 +337,8 @@ const make = Effect.gen(function* () {
               message: "Failed to create calendar event",
               cause: error,
             }),
-        })
+        });
 
-        // Return the created event
         return {
           id: uid as EventId,
           calendarId,
@@ -358,73 +351,36 @@ const make = Effect.gen(function* () {
           recurrenceRule: input.recurrenceRule,
           url: `${calendar.url}${uid}.ics`,
           etag: Option.none(),
-        } as CalendarEvent
+        } as CalendarEvent;
       }),
 
     updateEvent: ({ calendarId, eventId, input }) =>
       Effect.gen(function* () {
-        const calendar = yield* findCalendar(calendarId)
+        const calendar = yield* findCalendar(calendarId);
+        const objects = yield* fetchCalendarObjects(calendar);
+        const found = findEventInObjects(objects, calendarId, eventId);
 
-        // Fetch existing event
-        const objects = yield* Effect.tryPromise({
-          try: () =>
-            client.fetchCalendarObjects({
-              calendar,
-            }),
-          catch: (error) =>
-            new CalDavError({
-              message: "Failed to fetch calendar objects",
-              cause: error,
-            }),
-        })
+        const { obj: existingObj, event: existingEvent } = yield* Option.match(found, {
+          onNone: () => Effect.fail(new EventNotFoundError({ calendarId, eventId })),
+          onSome: Effect.succeed,
+        });
 
-        let existingObj: (typeof objects)[0] | undefined
-        let existingEvent: CalendarEvent | undefined
-
-        for (const obj of objects) {
-          if (obj.data) {
-            const event = parseICalEvent(
-              obj.data,
-              calendarId,
-              obj.url,
-              obj.etag
-            )
-            if (event && event.id === eventId) {
-              existingObj = obj
-              existingEvent = event
-              break
-            }
-          }
-        }
-
-        if (!existingObj || !existingEvent) {
-          return yield* Effect.fail(new EventNotFoundError({ calendarId, eventId }))
-        }
-
-        // Build updated event
+        // Build updated event using Option.getOrElse for cleaner merging
         const updatedInput: CreateEventInput = {
-          summary: Option.isSome(input.summary)
-            ? input.summary.value
-            : existingEvent.summary,
-          start: Option.isSome(input.start)
-            ? input.start.value
-            : existingEvent.start,
-          end: Option.isSome(input.end) ? input.end.value : existingEvent.end,
+          summary: Option.getOrElse(input.summary, () => existingEvent.summary),
+          start: Option.getOrElse(input.start, () => existingEvent.start),
+          end: Option.getOrElse(input.end, () => existingEvent.end),
           description: Option.isSome(input.description)
             ? input.description
             : existingEvent.description,
-          location: Option.isSome(input.location)
-            ? input.location
-            : existingEvent.location,
-          allDay: Option.isSome(input.allDay)
-            ? input.allDay.value
-            : existingEvent.allDay,
+          location: Option.isSome(input.location) ? input.location : existingEvent.location,
+          allDay: Option.getOrElse(input.allDay, () => existingEvent.allDay),
           recurrenceRule: Option.isSome(input.recurrenceRule)
             ? input.recurrenceRule
             : existingEvent.recurrenceRule,
-        } as CreateEventInput
+        } as CreateEventInput;
 
-        const icalString = generateICalEvent(updatedInput, eventId)
+        const icalString = generateICalEvent(updatedInput, eventId);
 
         yield* Effect.tryPromise({
           try: () =>
@@ -440,7 +396,7 @@ const make = Effect.gen(function* () {
               message: "Failed to update calendar event",
               cause: error,
             }),
-        })
+        });
 
         return {
           id: eventId,
@@ -454,45 +410,19 @@ const make = Effect.gen(function* () {
           recurrenceRule: updatedInput.recurrenceRule,
           url: existingObj.url,
           etag: Option.none(),
-        } as CalendarEvent
+        } as CalendarEvent;
       }),
 
     deleteEvent: ({ calendarId, eventId }) =>
       Effect.gen(function* () {
-        const calendar = yield* findCalendar(calendarId)
+        const calendar = yield* findCalendar(calendarId);
+        const objects = yield* fetchCalendarObjects(calendar);
+        const found = findEventInObjects(objects, calendarId, eventId);
 
-        const objects = yield* Effect.tryPromise({
-          try: () =>
-            client.fetchCalendarObjects({
-              calendar,
-            }),
-          catch: (error) =>
-            new CalDavError({
-              message: "Failed to fetch calendar objects",
-              cause: error,
-            }),
-        })
-
-        let targetObj: (typeof objects)[0] | undefined
-
-        for (const obj of objects) {
-          if (obj.data) {
-            const event = parseICalEvent(
-              obj.data,
-              calendarId,
-              obj.url,
-              obj.etag
-            )
-            if (event && event.id === eventId) {
-              targetObj = obj
-              break
-            }
-          }
-        }
-
-        if (!targetObj) {
-          return yield* Effect.fail(new EventNotFoundError({ calendarId, eventId }))
-        }
+        const { obj: targetObj } = yield* Option.match(found, {
+          onNone: () => Effect.fail(new EventNotFoundError({ calendarId, eventId })),
+          onSome: Effect.succeed,
+        });
 
         yield* Effect.tryPromise({
           try: () =>
@@ -507,39 +437,30 @@ const make = Effect.gen(function* () {
               message: "Failed to delete calendar event",
               cause: error,
             }),
-        })
+        });
       }),
 
     freeBusy: ({ calendarIds, from, to }) =>
-      Effect.gen(function* () {
-        const results: FreeBusyResult[] = []
+      Effect.forEach(
+        calendarIds,
+        (calendarId) =>
+          Effect.gen(function* () {
+            const events = yield* service.fetchEvents({ calendarId, from, to });
 
-        for (const calendarId of calendarIds) {
-          const events = yield* service.fetchEvents({
-            calendarId,
-            from,
-            to,
-          })
+            const slots = Array.map(events, (event) => ({
+              start: event.start,
+              end: event.end,
+              type: "busy" as const,
+            }));
 
-          // Convert events to busy slots
-          const slots = events.map((event) => ({
-            start: event.start,
-            end: event.end,
-            type: "busy" as const,
-          }))
+            return { calendarId, slots } as FreeBusyResult;
+          }),
+        { concurrency: "unbounded" },
+      ),
+  };
 
-          results.push({
-            calendarId,
-            slots,
-          } as FreeBusyResult)
-        }
-
-        return results
-      }),
-  }
-
-  return service
-})
+  return service;
+});
 
 // ============================================================================
 // Live Layer
@@ -549,4 +470,4 @@ export const CalDavClientLive: Layer.Layer<
   CalDavClient,
   CalDavAuthError | CalDavError,
   FastmailConfig
-> = Layer.effect(CalDavClient, make)
+> = Layer.effect(CalDavClient, make);

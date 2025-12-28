@@ -14,6 +14,8 @@ CLI for managing Fastmail calendars via CalDAV. Designed for both humans and AI 
 
 ### With Nix (recommended)
 
+This project provides a Nix flake for easy installation and reproducible builds.
+
 ```bash
 # Run directly
 nix run github:michaelvessia/fmcal -- calendars
@@ -22,6 +24,16 @@ nix run github:michaelvessia/fmcal -- calendars
 nix profile install github:michaelvessia/fmcal
 ```
 
+Or add as a flake input:
+
+```nix
+{
+  inputs.fmcal.url = "github:michaelvessia/fmcal";
+}
+```
+
+Then use `inputs.fmcal.packages.${system}.default` in your configuration.
+
 ### From Source
 
 Requires [Bun](https://bun.sh/).
@@ -29,8 +41,9 @@ Requires [Bun](https://bun.sh/).
 ```bash
 git clone https://github.com/michaelvessia/fmcal
 cd fmcal
+nix develop      # Optional: enter dev shell with all dependencies
 bun install
-bun run build  # Creates ./fmcal binary
+bun run build    # Creates ./fmcal binary
 ```
 
 ## Configuration
