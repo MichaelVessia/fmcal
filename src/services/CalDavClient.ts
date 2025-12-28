@@ -97,10 +97,11 @@ export class CalDavClient extends Context.Tag("CalDavClient")<
 >() {}
 
 // ============================================================================
-// iCal Helpers
+// iCal Helpers (exported for testing)
 // ============================================================================
 
-function parseICalEvent(
+/** @internal */
+export function parseICalEvent(
   icalString: string,
   calendarId: CalendarId,
   eventUrl: string,
@@ -136,7 +137,8 @@ function parseICalEvent(
   }
 }
 
-function generateICalEvent(input: CreateEventInput, uid: string): string {
+/** @internal */
+export function generateICalEvent(input: CreateEventInput, uid: string): string {
   const vcalendar = new ICAL.Component(["vcalendar", [], []])
   vcalendar.updatePropertyWithValue("prodid", "-//fmcal//EN")
   vcalendar.updatePropertyWithValue("version", "2.0")
@@ -174,7 +176,8 @@ function generateICalEvent(input: CreateEventInput, uid: string): string {
   return vcalendar.toString()
 }
 
-function generateUid(): string {
+/** @internal */
+export function generateUid(): string {
   return `${crypto.randomUUID()}@fmcal`
 }
 
