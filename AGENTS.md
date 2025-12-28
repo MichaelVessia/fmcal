@@ -14,12 +14,19 @@ Agent-controllable CLI for Fastmail calendars via CalDAV, built with Effect.
 | Command | Description |
 |---------|-------------|
 | `fmcal calendars` | List all calendars |
-| `fmcal events <calendarId> [--from] [--to] [--max] [--query]` | List events |
+| `fmcal events --from <date> --to <date> <calendarId>` | List events |
 | `fmcal event <calendarId> <eventId>` | Get single event details |
 | `fmcal create <calendarId> --summary --start --end [...]` | Create event |
 | `fmcal update <calendarId> <eventId> [options]` | Update event |
 | `fmcal delete <calendarId> <eventId>` | Delete event |
 | `fmcal freebusy <calendarIds> --from --to` | Check free/busy |
+
+**Important**: Options must come BEFORE positional arguments (this is an @effect/cli convention). Use `--` after `bun run` to pass args correctly:
+```bash
+nix develop -c bun run src/main.ts -- events --from 2025-01-01T00:00:00 --to 2025-01-01T23:59:59 Calendar
+```
+
+**Note**: `bun` is only available inside the nix shell. Use `nix develop -c <command>` or enter the shell first with `nix develop`.
 
 ## Environment Variables
 
