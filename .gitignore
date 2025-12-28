@@ -12,6 +12,9 @@ fmcal
 .env
 .env.*
 
+# Nix
+.direnv/
+
 # IDE
 .idea/
 .vscode/
