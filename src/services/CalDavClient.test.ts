@@ -77,14 +77,14 @@ function createMockService(options?: {
 }): CalDavClientService {
   return {
     fetchCalendars: options?.failAuth
-      ? Effect.fail(new CalDavAuthError({ message: "Auth failed" }))
+      ? Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }))
       : options?.failFetch
-        ? Effect.fail(new CalDavError({ message: "Fetch failed" }))
+        ? Effect.fail(new CalDavError({ reason: "FetchCalendarsFailed", message: "Fetch failed" }))
         : Effect.succeed(mockCalendars),
 
     fetchEvents: ({ calendarId }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
@@ -95,7 +95,7 @@ function createMockService(options?: {
 
     fetchEvent: ({ calendarId, eventId }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
@@ -110,7 +110,7 @@ function createMockService(options?: {
 
     createEvent: ({ calendarId, input }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
@@ -133,7 +133,7 @@ function createMockService(options?: {
 
     updateEvent: ({ calendarId, eventId, input }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
@@ -156,7 +156,7 @@ function createMockService(options?: {
 
     deleteEvent: ({ calendarId, eventId }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const calendar = mockCalendars.find((c) => c.id === calendarId);
       if (!calendar) {
@@ -171,7 +171,7 @@ function createMockService(options?: {
 
     freeBusy: ({ calendarIds }) => {
       if (options?.failAuth) {
-        return Effect.fail(new CalDavAuthError({ message: "Auth failed" }));
+        return Effect.fail(new CalDavAuthError({ reason: "Unknown", message: "Auth failed" }));
       }
       const results = [];
       for (const calendarId of calendarIds) {
@@ -525,88 +525,98 @@ describe("iCal Helpers", () => {
   });
 
   describe("generateICalEvent", () => {
-    it("generates valid iCal string for basic event", () => {
-      const input = new CreateEventInput({
-        summary: "Test Event",
-        start: new Date("2025-01-15T10:00:00Z"),
-        end: new Date("2025-01-15T11:00:00Z"),
-        description: Option.none(),
-        location: Option.none(),
-        recurrenceRule: Option.none(),
-      });
+    it.effect("generates valid iCal string for basic event", () =>
+      Effect.gen(function* () {
+        const input = new CreateEventInput({
+          summary: "Test Event",
+          start: new Date("2025-01-15T10:00:00Z"),
+          end: new Date("2025-01-15T11:00:00Z"),
+          description: Option.none(),
+          location: Option.none(),
+          recurrenceRule: Option.none(),
+        });
 
-      const ical = generateICalEvent(input, "test-uid@fmcal");
+        const ical = yield* generateICalEvent(input, "test-uid@fmcal");
 
-      expect(ical).toContain("BEGIN:VCALENDAR");
-      expect(ical).toContain("END:VCALENDAR");
-      expect(ical).toContain("BEGIN:VEVENT");
-      expect(ical).toContain("END:VEVENT");
-      expect(ical).toContain("UID:test-uid@fmcal");
-      expect(ical).toContain("SUMMARY:Test Event");
-    });
+        expect(ical).toContain("BEGIN:VCALENDAR");
+        expect(ical).toContain("END:VCALENDAR");
+        expect(ical).toContain("BEGIN:VEVENT");
+        expect(ical).toContain("END:VEVENT");
+        expect(ical).toContain("UID:test-uid@fmcal");
+        expect(ical).toContain("SUMMARY:Test Event");
+      }),
+    );
 
-    it("includes description when provided", () => {
-      const input = new CreateEventInput({
-        summary: "Event with Description",
-        start: new Date("2025-01-15T10:00:00Z"),
-        end: new Date("2025-01-15T11:00:00Z"),
-        description: Option.some("This is a description"),
-        location: Option.none(),
-        recurrenceRule: Option.none(),
-      });
+    it.effect("includes description when provided", () =>
+      Effect.gen(function* () {
+        const input = new CreateEventInput({
+          summary: "Event with Description",
+          start: new Date("2025-01-15T10:00:00Z"),
+          end: new Date("2025-01-15T11:00:00Z"),
+          description: Option.some("This is a description"),
+          location: Option.none(),
+          recurrenceRule: Option.none(),
+        });
 
-      const ical = generateICalEvent(input, "test-uid@fmcal");
+        const ical = yield* generateICalEvent(input, "test-uid@fmcal");
 
-      expect(ical).toContain("DESCRIPTION:This is a description");
-    });
+        expect(ical).toContain("DESCRIPTION:This is a description");
+      }),
+    );
 
-    it("includes location when provided", () => {
-      const input = new CreateEventInput({
-        summary: "Event with Location",
-        start: new Date("2025-01-15T10:00:00Z"),
-        end: new Date("2025-01-15T11:00:00Z"),
-        description: Option.none(),
-        location: Option.some("Conference Room A"),
-        recurrenceRule: Option.none(),
-      });
+    it.effect("includes location when provided", () =>
+      Effect.gen(function* () {
+        const input = new CreateEventInput({
+          summary: "Event with Location",
+          start: new Date("2025-01-15T10:00:00Z"),
+          end: new Date("2025-01-15T11:00:00Z"),
+          description: Option.none(),
+          location: Option.some("Conference Room A"),
+          recurrenceRule: Option.none(),
+        });
 
-      const ical = generateICalEvent(input, "test-uid@fmcal");
+        const ical = yield* generateICalEvent(input, "test-uid@fmcal");
 
-      expect(ical).toContain("LOCATION:Conference Room A");
-    });
+        expect(ical).toContain("LOCATION:Conference Room A");
+      }),
+    );
 
-    it("handles all-day events", () => {
-      const input = new CreateEventInput({
-        summary: "All Day Event",
-        start: new Date("2025-01-15"),
-        end: new Date("2025-01-16"),
-        description: Option.none(),
-        location: Option.none(),
-        allDay: true,
-        recurrenceRule: Option.none(),
-      });
+    it.effect("handles all-day events", () =>
+      Effect.gen(function* () {
+        const input = new CreateEventInput({
+          summary: "All Day Event",
+          start: new Date("2025-01-15"),
+          end: new Date("2025-01-16"),
+          description: Option.none(),
+          location: Option.none(),
+          allDay: true,
+          recurrenceRule: Option.none(),
+        });
 
-      const ical = generateICalEvent(input, "test-uid@fmcal");
+        const ical = yield* generateICalEvent(input, "test-uid@fmcal");
 
-      expect(ical).toContain("SUMMARY:All Day Event");
-      // All-day events should have DATE (not DATE-TIME) values
-      expect(ical).toContain("DTSTART;VALUE=DATE:");
-    });
+        expect(ical).toContain("SUMMARY:All Day Event");
+        // All-day events should have DATE (not DATE-TIME) values
+        expect(ical).toContain("DTSTART;VALUE=DATE:");
+      }),
+    );
 
-    it("includes recurrence rule when provided", () => {
-      const input = new CreateEventInput({
-        summary: "Recurring Event",
-        start: new Date("2025-01-15T10:00:00Z"),
-        end: new Date("2025-01-15T11:00:00Z"),
-        description: Option.none(),
-        location: Option.none(),
-        recurrenceRule: Option.some("FREQ=WEEKLY;BYDAY=MO"),
-      });
+    it.effect("includes recurrence rule when provided", () =>
+      Effect.gen(function* () {
+        const input = new CreateEventInput({
+          summary: "Recurring Event",
+          start: new Date("2025-01-15T10:00:00Z"),
+          end: new Date("2025-01-15T11:00:00Z"),
+          description: Option.none(),
+          location: Option.none(),
+          recurrenceRule: Option.some("FREQ=WEEKLY;BYDAY=MO"),
+        });
 
-      const ical = generateICalEvent(input, "test-uid@fmcal");
+        const ical = yield* generateICalEvent(input, "test-uid@fmcal");
 
-      expect(ical).toContain("RRULE:");
-    });
+        expect(ical).toContain("RRULE:");
+      }),
+    );
   });
 
   describe("parseICalEvent", () => {
@@ -624,52 +634,61 @@ LOCATION:Room B
 END:VEVENT
 END:VCALENDAR`;
 
-    it("parses a valid iCal string", () => {
-      const result = parseICalEvent(
-        sampleIcal,
-        "work" as CalendarId,
-        "https://example.com/event.ics",
-        '"etag123"',
-      );
+    it.effect("parses a valid iCal string", () =>
+      Effect.gen(function* () {
+        const result = yield* parseICalEvent(
+          sampleIcal,
+          "work" as CalendarId,
+          "https://example.com/event.ics",
+          '"etag123"',
+        );
 
-      expect(Option.isSome(result)).toBe(true);
-      const event = Option.getOrThrow(result);
-      expect(event.id as string).toBe("test-event-123@fmcal");
-      expect(event.summary).toBe("Parsed Event");
-      expect(Option.getOrNull(event.description)).toBe("Event description");
-      expect(Option.getOrNull(event.location)).toBe("Room B");
-      expect(Option.getOrNull(event.etag)).toBe('"etag123"');
-    });
+        expect(Option.isSome(result)).toBe(true);
+        const event = Option.getOrThrow(result);
+        expect(event.id as string).toBe("test-event-123@fmcal");
+        expect(event.summary).toBe("Parsed Event");
+        expect(Option.getOrNull(event.description)).toBe("Event description");
+        expect(Option.getOrNull(event.location)).toBe("Room B");
+        expect(Option.getOrNull(event.etag)).toBe('"etag123"');
+      }),
+    );
 
-    it("returns None for invalid iCal string", () => {
-      const result = parseICalEvent(
-        "not valid ical",
-        "work" as CalendarId,
-        "https://example.com/event.ics",
-        undefined,
-      );
+    it.effect("fails with ICalParseError for invalid iCal string", () =>
+      Effect.gen(function* () {
+        const exit = yield* Effect.exit(
+          parseICalEvent(
+            "not valid ical",
+            "work" as CalendarId,
+            "https://example.com/event.ics",
+            undefined,
+          ),
+        );
 
-      expect(Option.isNone(result)).toBe(true);
-    });
+        expect(exit._tag).toBe("Failure");
+      }),
+    );
 
-    it("returns None for iCal without VEVENT", () => {
-      const noEvent = `BEGIN:VCALENDAR
+    it.effect("returns None for iCal without VEVENT", () =>
+      Effect.gen(function* () {
+        const noEvent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//fmcal//EN
 END:VCALENDAR`;
 
-      const result = parseICalEvent(
-        noEvent,
-        "work" as CalendarId,
-        "https://example.com/event.ics",
-        undefined,
-      );
+        const result = yield* parseICalEvent(
+          noEvent,
+          "work" as CalendarId,
+          "https://example.com/event.ics",
+          undefined,
+        );
 
-      expect(Option.isNone(result)).toBe(true);
-    });
+        expect(Option.isNone(result)).toBe(true);
+      }),
+    );
 
-    it("handles missing optional fields", () => {
-      const minimalIcal = `BEGIN:VCALENDAR
+    it.effect("handles missing optional fields", () =>
+      Effect.gen(function* () {
+        const minimalIcal = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
 UID:minimal@fmcal
@@ -679,23 +698,25 @@ SUMMARY:Minimal Event
 END:VEVENT
 END:VCALENDAR`;
 
-      const result = parseICalEvent(
-        minimalIcal,
-        "personal" as CalendarId,
-        "https://example.com/minimal.ics",
-        undefined,
-      );
+        const result = yield* parseICalEvent(
+          minimalIcal,
+          "personal" as CalendarId,
+          "https://example.com/minimal.ics",
+          undefined,
+        );
 
-      expect(Option.isSome(result)).toBe(true);
-      const event = Option.getOrThrow(result);
-      expect(event.summary).toBe("Minimal Event");
-      expect(Option.isNone(event.description)).toBe(true);
-      expect(Option.isNone(event.location)).toBe(true);
-      expect(Option.isNone(event.etag)).toBe(true);
-    });
+        expect(Option.isSome(result)).toBe(true);
+        const event = Option.getOrThrow(result);
+        expect(event.summary).toBe("Minimal Event");
+        expect(Option.isNone(event.description)).toBe(true);
+        expect(Option.isNone(event.location)).toBe(true);
+        expect(Option.isNone(event.etag)).toBe(true);
+      }),
+    );
 
-    it("parses all-day events correctly", () => {
-      const allDayIcal = `BEGIN:VCALENDAR
+    it.effect("parses all-day events correctly", () =>
+      Effect.gen(function* () {
+        const allDayIcal = `BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VEVENT
 UID:allday@fmcal
@@ -705,16 +726,17 @@ SUMMARY:All Day
 END:VEVENT
 END:VCALENDAR`;
 
-      const result = parseICalEvent(
-        allDayIcal,
-        "work" as CalendarId,
-        "https://example.com/allday.ics",
-        undefined,
-      );
+        const result = yield* parseICalEvent(
+          allDayIcal,
+          "work" as CalendarId,
+          "https://example.com/allday.ics",
+          undefined,
+        );
 
-      expect(Option.isSome(result)).toBe(true);
-      const event = Option.getOrThrow(result);
-      expect(event.allDay).toBe(true);
-    });
+        expect(Option.isSome(result)).toBe(true);
+        const event = Option.getOrThrow(result);
+        expect(event.allDay).toBe(true);
+      }),
+    );
   });
 });
