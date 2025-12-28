@@ -6,6 +6,11 @@
     "dev": "bun run src/main.ts",
     "build": "bun build src/main.ts --compile --outfile fmcal",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check .",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "prepare": "effect-language-service patch"
   },
   "dependencies": {
@@ -17,8 +22,11 @@
     "ical.js": "^2.1"
   },
   "devDependencies": {
+    "@codeforbreakfast/bun-test-effect": "^0.4.1",
     "@effect/language-service": "^0.62",
     "@types/bun": "latest",
+    "oxfmt": "^0.20.0",
+    "oxlint": "^0.16.0",
     "typescript": "^5.7"
   }
 }
