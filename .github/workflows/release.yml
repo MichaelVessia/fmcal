@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun test
+
+      - name: Build all targets
+        run: |
+          mkdir -p dist
+          bun build src/main.ts --compile --target=bun-linux-x64 --outfile dist/fmcal-linux-x64
+          bun build src/main.ts --compile --target=bun-darwin-x64 --outfile dist/fmcal-darwin-x64
+          bun build src/main.ts --compile --target=bun-darwin-arm64 --outfile dist/fmcal-darwin-arm64
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Get SHA256 values
+          SHA_LINUX_X64=$(grep fmcal-linux-x64 dist/checksums.txt | cut -d' ' -f1)
+          SHA_DARWIN_X64=$(grep fmcal-darwin-x64 dist/checksums.txt | cut -d' ' -f1)
+          SHA_DARWIN_ARM64=$(grep fmcal-darwin-arm64 dist/checksums.txt | cut -d' ' -f1)
+
+          # Clone tap repo
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/MichaelVessia/homebrew-tap.git tap
+          cd tap
+
+          # Create/update formula
+          mkdir -p Formula
+          cat > Formula/fmcal.rb << FORMULA
+          class Fmcal < Formula
+            desc "CLI for Fastmail calendars via CalDAV"
+            homepage "https://github.com/MichaelVessia/fmcal"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/MichaelVessia/fmcal/releases/download/v${VERSION}/fmcal-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/MichaelVessia/fmcal/releases/download/v${VERSION}/fmcal-darwin-x64"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/MichaelVessia/fmcal/releases/download/v${VERSION}/fmcal-linux-x64"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              if OS.mac?
+                bin.install "fmcal-darwin-#{Hardware::CPU.arm? ? "arm64" : "x64"}" => "fmcal"
+              else
+                bin.install "fmcal-linux-x64" => "fmcal"
+              end
+            end
+
+            def caveats
+              <<~EOS
+                fmcal requires Fastmail credentials. Set environment variables:
+
+                  export FMCAL_USERNAME="user@fastmail.com"
+                  export FMCAL_PASSWORD="app-specific-password"
+
+                Get an app password:
+                  Fastmail → Settings → Privacy & Security → Integrations → New app password
+              EOS
+            end
+
+            test do
+              assert_match "fmcal", shell_output("#{bin}/fmcal --help")
+            end
+          end
+          FORMULA
+
+          # Commit and push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/fmcal.rb
+          git commit -m "fmcal ${VERSION}"
+          git push

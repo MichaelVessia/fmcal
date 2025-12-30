@@ -12,7 +12,14 @@ CLI for managing Fastmail calendars via CalDAV. Designed for both humans and AI 
 
 ## Installation
 
-### With Nix (recommended)
+### Homebrew (macOS)
+
+```bash
+brew tap MichaelVessia/tap
+brew install fmcal
+```
+
+### With Nix
 
 This project provides a Nix flake for easy installation and reproducible builds.
 
@@ -33,6 +40,22 @@ Or add as a flake input:
 ```
 
 Then use `inputs.fmcal.packages.${system}.default` in your configuration.
+
+### Download Binary
+
+```bash
+# macOS ARM64 (Apple Silicon)
+curl -L https://github.com/MichaelVessia/fmcal/releases/latest/download/fmcal-darwin-arm64 -o fmcal
+chmod +x fmcal && mv fmcal /usr/local/bin/
+
+# macOS x64 (Intel)
+curl -L https://github.com/MichaelVessia/fmcal/releases/latest/download/fmcal-darwin-x64 -o fmcal
+chmod +x fmcal && mv fmcal /usr/local/bin/
+
+# Linux x64
+curl -L https://github.com/MichaelVessia/fmcal/releases/latest/download/fmcal-linux-x64 -o fmcal
+chmod +x fmcal && sudo mv fmcal /usr/local/bin/
+```
 
 ### From Source
 
