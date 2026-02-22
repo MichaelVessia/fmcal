@@ -1,8 +1,10 @@
 import { Args, Command, Options } from "@effect/cli";
-import { Console, Effect, Option } from "effect";
+import { Effect, Option } from "effect";
 
 import type { CalendarId } from "../domain.ts";
 import { CreateEventInput } from "../domain.ts";
+import * as Envelope from "../envelope/index.ts";
+import * as NextActions from "../envelope/next-actions.ts";
 import { CalDavClient } from "../services/CalDavClient.ts";
 
 const calendarIdArg = Args.text({ name: "calendarId" });
@@ -20,6 +22,39 @@ const descriptionOption = Options.text("description").pipe(Options.optional);
 const locationOption = Options.text("location").pipe(Options.optional);
 const allDayOption = Options.boolean("all-day").pipe(Options.optional);
 
+export const createHandler = (args: {
+  calendarId: string;
+  summary: string;
+  start: Date;
+  end: Date;
+  description: Option.Option<string>;
+  location: Option.Option<string>;
+  allDay: Option.Option<boolean>;
+}) =>
+  Effect.gen(function* () {
+    const client = yield* CalDavClient;
+
+    const input = new CreateEventInput({
+      summary: args.summary,
+      start: args.start,
+      end: args.end,
+      description: Option.isSome(args.description) ? Option.some(args.description.value) : Option.none(),
+      location: Option.isSome(args.location) ? Option.some(args.location.value) : Option.none(),
+      allDay: Option.getOrUndefined(args.allDay),
+      recurrenceRule: Option.none(),
+    });
+
+    const event = yield* client.createEvent({
+      calendarId: args.calendarId as CalendarId,
+      input,
+    });
+
+    return Envelope.success("create", event, [
+      NextActions.getEvent(args.calendarId, event.id),
+      NextActions.listEvents(args.calendarId),
+    ]);
+  });
+
 export const createCommand = Command.make(
   "create",
   {
@@ -31,25 +66,5 @@ export const createCommand = Command.make(
     location: locationOption,
     allDay: allDayOption,
   },
-  ({ calendarId, summary, start, end, description, location, allDay }) =>
-    Effect.gen(function* () {
-      const client = yield* CalDavClient;
-
-      const input = new CreateEventInput({
-        summary,
-        start,
-        end,
-        description: Option.isSome(description) ? Option.some(description.value) : Option.none(),
-        location: Option.isSome(location) ? Option.some(location.value) : Option.none(),
-        allDay: Option.getOrUndefined(allDay),
-        recurrenceRule: Option.none(),
-      });
-
-      const event = yield* client.createEvent({
-        calendarId: calendarId as CalendarId,
-        input,
-      });
-
-      yield* Console.log(JSON.stringify(event, null, 2));
-    }),
-);
+  (args) => createHandler(args).pipe(Effect.flatMap(Envelope.output)),
+).pipe(Command.withDescription("Create a new event"));
